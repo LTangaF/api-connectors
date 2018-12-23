@@ -1,3 +1,4 @@
+import bravado
 from dateutil.tz import tzutc
 import websocket
 import threading
@@ -334,7 +335,10 @@ class BitMEXWebsocket:
             self.candle['close'] = price
 
     def __publish_candle(self, trade_time, price):
-        self.__replace_last_candle()
+        try:
+            self.__replace_last_candle()
+        except bravado.exception.HTTPBadGateway:
+            self.logger.warning('Unable to replace last candle. Possible stale client.')
         self.data['candle'].append(self.candle)
         self.__trim_candle_data()
         if self.on_candle:
