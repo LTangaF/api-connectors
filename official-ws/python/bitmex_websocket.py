@@ -25,7 +25,7 @@ class BitMEXWebsocket:
     # Don't grow a table larger than this amount. Helps cap memory usage.
     MAX_TABLE_LEN = 200
 
-    def __init__(self, endpoint, symbol, rest_client, api_key=None, api_secret=None, on_candle_callback=None):
+    def __init__(self, endpoint, symbol, rest_client, api_key=None, api_secret=None, on_candle_callback=None, ma_long=30):
         '''Connect to the websocket and initialize data stores.'''
         self.logger = logging.getLogger(__name__)
         self.logger.debug("Initializing WebSocket.")
@@ -49,6 +49,9 @@ class BitMEXWebsocket:
 
         self.api_key = api_key
         self.api_secret = api_secret
+
+        self.ma_long = ma_long
+        self.logger.info('MA Long length: %s' % ma_long)
 
         self.data = {}
         self.keys = {}
@@ -272,8 +275,10 @@ class BitMEXWebsocket:
             self.logger.error(traceback.format_exc())
 
     def __add_historic_candles(self):
+        periods = (self.ma_long * 2) + 2
+        self.logger.info('Get %s historic periods.' % periods)
         historic = self.rest_client.Trade.Trade_getBucketed(symbol=self.symbol,
-                                                        count=62,binSize='1m',
+                                                        count=periods,binSize='1m',
                                                         reverse=True,
                                                         partial=False).result()[0]
         for period in reversed(historic):
@@ -312,8 +317,9 @@ class BitMEXWebsocket:
                 self.data['candle'][-1] = new_candle
 
     def __trim_candle_data(self):
-        if len(self.data['candle']) > BitMEXWebsocket.MAX_TABLE_LEN:
-            self.data['candle'] = self.data['candle'][int(BitMEXWebsocket.MAX_TABLE_LEN / 2):]
+        if len(self.data['candle']) > (self.ma_long * 4):
+            periods = self.ma_long * 3
+            self.data['candle'] = self.data['candle'][periods:]
 
     def __start_new_candle(self, trade_time, price):
         delta_to_next = timedelta(seconds=(59 - trade_time.second),
