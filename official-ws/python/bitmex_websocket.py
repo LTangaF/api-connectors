@@ -9,8 +9,12 @@ import logging
 import urllib
 import math
 from datetime import datetime, timedelta
+import sys
 from util.api_key import generate_nonce, generate_signature
 
+
+class TimeToExit(Exception):
+    pass
 
 # Naive implementation of connecting to BitMEX websocket for streaming realtime data.
 # The Marketmaker still interacts with this as if it were a REST Endpoint, but now it can get
@@ -271,8 +275,11 @@ class BitMEXWebsocket:
                         self.data[table].remove(item)
                 else:
                     raise Exception("Unknown action: %s" % action)
-        except:
-            self.logger.error(traceback.format_exc())
+        except Exception as ex:
+            if isinstance(ex, TimeToExit):
+                sys.exit(0)
+            else:
+                self.logger.error(traceback.format_exc())
 
     def __add_historic_candles(self):
         periods = (self.ma_long * 2) + 2
