@@ -29,7 +29,7 @@ class BitMEXWebsocket:
     # Don't grow a table larger than this amount. Helps cap memory usage.
     MAX_TABLE_LEN = 200
 
-    def __init__(self, endpoint, symbol, rest_client, api_key=None, api_secret=None, on_trade_callback=None, ma_long=30):
+    def __init__(self, endpoint, symbol, rest_client, api_key=None, api_secret=None, strategy_object=None, ma_long=30):
         '''Connect to the websocket and initialize data stores.'''
         self.logger = logging.getLogger(__name__)
         self.logger.debug("Initializing WebSocket.")
@@ -44,7 +44,7 @@ class BitMEXWebsocket:
                         'close': 0 }
 
         self.rest_client = rest_client
-        self.on_trade = on_trade_callback
+        self.strategy_object = strategy_object
 
         if api_key is not None and api_secret is None:
             raise ValueError('api_secret is required if api_key is provided')
@@ -389,8 +389,8 @@ class BitMEXWebsocket:
                     self.bad_minute = False
             self.__start_new_candle(trade_time, last_price)
         self.__bump_prices(message['data'])
-        if self.on_trade and 'candle' in self.data.keys():
-            self.on_trade(self, trade_time, last_price)
+        if self.strategy_object and 'candle' in self.data.keys():
+            self.strategy_object.on_trade(self, trade_time, last_price)
 
     def __on_error(self, error):
         '''Called on fatal websocket errors. We exit on these.'''
