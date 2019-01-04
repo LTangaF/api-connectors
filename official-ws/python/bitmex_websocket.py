@@ -29,7 +29,7 @@ class BitMEXWebsocket:
     # Don't grow a table larger than this amount. Helps cap memory usage.
     MAX_TABLE_LEN = 200
 
-    def __init__(self, endpoint, symbol, rest_client, api_key=None, api_secret=None, on_candle_callback=None, ma_long=30):
+    def __init__(self, endpoint, symbol, rest_client, api_key=None, api_secret=None, on_trade_callback=None, ma_long=30):
         '''Connect to the websocket and initialize data stores.'''
         self.logger = logging.getLogger(__name__)
         self.logger.debug("Initializing WebSocket.")
@@ -44,7 +44,7 @@ class BitMEXWebsocket:
                         'close': 0 }
 
         self.rest_client = rest_client
-        self.on_candle = on_candle_callback
+        self.on_trade = on_trade_callback
 
         if api_key is not None and api_secret is None:
             raise ValueError('api_secret is required if api_key is provided')
@@ -73,6 +73,14 @@ class BitMEXWebsocket:
         if api_key:
             self.__wait_for_account()
         self.logger.info('Got all market data. Starting.')
+
+    @property
+    def candle(self):
+        return self.__candle
+
+    @candle.setter
+    def candle(self, candle):
+        self.__candle = candle
 
     def exit(self):
         '''Call this to exit - will close websocket.'''
@@ -250,7 +258,7 @@ class BitMEXWebsocket:
                     self.data[table] += message['data']
                     # Added for OHLC candles
                     if table == 'trade':
-                        self.__add_candle(message)
+                        self.__add_to_candle(message)
 
                     # Limit the max length of the table to avoid excessive memory usage.
                     # Don't trim orders because we'll lose valuable state if we do.
@@ -347,17 +355,15 @@ class BitMEXWebsocket:
                 self.candle['low'] = price
             self.candle['close'] = price
 
-    def __publish_candle(self, trade_time, price):
+    def __publish_candle(self, trade_time):
         try:
             self.__replace_last_candle()
         except bravado.exception.HTTPBadGateway:
             self.logger.warning('Unable to replace last candle. Possible stale client.')
         self.data['candle'].append(self.candle)
         self.__trim_candle_data()
-        if self.on_candle:
-            self.on_candle(self, trade_time, price)
 
-    def __add_candle(self, message):
+    def __add_to_candle(self, message):
         '''add candle data'''
         trade_time = datetime.strptime(message['data'][-1]['timestamp'], '%Y-%m-%dT%H:%M:%S.%fZ')
         # bins are labeled for the top of the minute
@@ -378,11 +384,13 @@ class BitMEXWebsocket:
                         self.data['candle'] = []
                         self.__add_historic_candles()
                     '''Publish candle'''
-                    self.__publish_candle(trade_time, last_price)
+                    self.__publish_candle(trade_time)
                 else:
                     self.bad_minute = False
             self.__start_new_candle(trade_time, last_price)
         self.__bump_prices(message['data'])
+        if self.on_trade and 'candle' in self.data.keys():
+            self.on_trade(self, trade_time, last_price)
 
     def __on_error(self, error):
         '''Called on fatal websocket errors. We exit on these.'''
